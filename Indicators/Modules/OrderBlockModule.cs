@@ -1,150 +1,247 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using NinjaTrader.NinjaScript.Indicators.OrderFlowSignals;
 
 namespace NinjaTrader.NinjaScript.Indicators.OrderFlowSignals
 {
     /// <summary>
-    /// Identifies institutional order blocks: the last opposite-colour candle before
-    /// a strong impulsive move. These zones represent where large participants placed
-    /// resting orders, making them high-probability reaction levels on a retest.
+    /// Identifies bullish and bearish order blocks using Smart Money Concepts (SMC) logic
+    /// and tracks their mitigation status across subsequent bars.
     ///
-    /// Gate logic: fires when current price re-enters an active order block zone AND
-    /// the zone has not been violated (no close through its body).
+    /// Identification rules:
+    ///   Bullish OB — the last <em>bearish</em> candle immediately before a bullish impulse
+    ///                that moves ≥ <see cref="MinImpulseMultiple"/> × ATR(14).
+    ///   Bearish OB — the last <em>bullish</em> candle immediately before a bearish impulse
+    ///                that moves ≥ <see cref="MinImpulseMultiple"/> × ATR(14).
     ///
-    /// Block identification follows Smart Money Concepts (SMC):
-    ///   - Bullish OB: last bearish candle before a bullish impulse that breaks structure.
-    ///   - Bearish OB: last bullish candle before a bearish impulse that breaks structure.
+    /// Zone body convention (SMC standard):
+    ///   Bullish OB zone: Open → Low  of the bearish candidate candle.
+    ///   Bearish OB zone: High → Open of the bullish candidate candle.
+    ///
+    /// Mitigation: an OB is voided when the current bar's Low (bullish OB) or High (bearish OB)
+    /// trades through the zone boundary. Only unmitigated OBs are returned by <see cref="GetNearestValidOB"/>.
     /// </summary>
     public sealed class OrderBlockModule
     {
         // ── Parameters ────────────────────────────────────────────────────────────
-        public int    ImpulseLookback      { get; set; } = 3;    // bars that must move after the OB
-        public double MinImpulseMultiple   { get; set; } = 1.5;  // impulse ATR multiple to qualify
-        public int    MaxActiveZones       { get; set; } = 6;
-        public double TickSize             { get; set; } = 0.25;
-
-        // ── Outputs ───────────────────────────────────────────────────────────────
-        public bool              InActiveOrderBlock { get; private set; }
-        public ZoneLevel?        CurrentZone        { get; private set; }
-        public IReadOnlyList<ZoneLevel> ActiveZones => _activeZones;
-
-        // ── Internal state ────────────────────────────────────────────────────────
-        private readonly List<ZoneLevel>  _activeZones  = new();
-        private readonly Queue<BarRecord> _barHistory   = new();
-
-        private int    _barIndex;
-        private double _atr; // simple rolling ATR approximation
-
-        private record BarRecord(double Open, double High, double Low, double Close, int Index);
+        /// <summary>Number of bars that must form the impulse leg after the candidate OB bar.</summary>
+        public int    ImpulseLookback    { get; set; } = 3;
 
         /// <summary>
-        /// Must be called on every bar. ATR should be the current 14-period ATR value,
-        /// which the parent indicator passes in from its built-in ATR series.
+        /// The impulse High-Low range must exceed this multiple of ATR(14) to qualify.
+        /// A fallback of TickSize × 8 is used when ATR is not yet available.
+        /// </summary>
+        public double MinImpulseMultiple { get; set; } = 1.5;
+
+        /// <summary>Maximum number of live (unmitigated) order blocks retained simultaneously.</summary>
+        public int    MaxActiveZones     { get; set; } = 8;
+
+        /// <summary>Instrument tick size — required for proximity calculations.</summary>
+        public double TickSize           { get; set; } = 0.25;
+
+        // ── Outputs ───────────────────────────────────────────────────────────────
+        /// <summary>All detected order blocks, including mitigated ones.</summary>
+        public IReadOnlyList<OrderBlock> OrderBlocks => _obs;
+
+        // Legacy property kept for backward compatibility with old gate logic.
+        /// <summary>True when the current close is inside any active order block zone.</summary>
+        public bool InActiveOrderBlock { get; private set; }
+
+        // ── Internal state ────────────────────────────────────────────────────────
+        private readonly List<OrderBlock> _obs        = new List<OrderBlock>();
+        private readonly Queue<BarData>   _barHistory = new Queue<BarData>();
+        private int    _barIndex;
+        private double _atr;
+
+        private struct BarData
+        {
+            public double Open, High, Low, Close;
+            public int    Index;
+        }
+
+        // ── Bar feed ──────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Call on every bar close. <paramref name="atr"/> should be the ATR(14) value
+        /// from the parent indicator's built-in ATR series.
         /// </summary>
         public void OnBarUpdate(double open, double high, double low, double close, double atr)
         {
-            _atr      = atr;
+            _atr = atr;
             _barIndex++;
 
-            _barHistory.Enqueue(new BarRecord(open, high, low, close, _barIndex));
-            if (_barHistory.Count > ImpulseLookback + 2) _barHistory.Dequeue();
+            _barHistory.Enqueue(new BarData { Open = open, High = high, Low = low, Close = close, Index = _barIndex });
 
-            InvalidateViolatedZones(close);
-            TryIdentifyOrderBlock();
-            CheckCurrentBarInZone(close);
-            PruneExcessZones();
+            // Keep enough history for OB scanning: ImpulseLookback impulse bars +
+            // up to 5 bars before the impulse to find the last opposite-colour candle.
+            int needed = ImpulseLookback + 6;
+            while (_barHistory.Count > needed)
+                _barHistory.Dequeue();
+
+            UpdateMitigation(high, low);
+            ScanForNewOrderBlock();
+            UpdateLegacyFlag(close);
+            Prune();
         }
 
-        private void TryIdentifyOrderBlock()
+        // ── Gate interface ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns the nearest unmitigated <see cref="OrderBlock"/> whose zone midpoint is
+        /// within <paramref name="proximityTicks"/> ticks of <paramref name="price"/>.
+        /// Also matches when price is directly inside the zone body.
+        /// Returns an <see cref="OrderBlock"/> with <c>Mitigated = true</c> when none is found
+        /// (use <c>!ob.Mitigated</c> as the null check).
+        /// </summary>
+        public OrderBlock GetNearestValidOB(double price, double proximityTicks)
         {
+            double range   = proximityTicks * TickSize;
+            var    nearest = new OrderBlock { Mitigated = true };
+            double nearestDist = double.MaxValue;
+
+            foreach (var ob in _obs)
+            {
+                if (ob.Mitigated) continue;
+
+                double mid  = (ob.High + ob.Low) / 2.0;
+                double dist = Math.Abs(price - mid);
+
+                // Qualify when inside the zone OR within range of either boundary.
+                bool inZone    = price >= ob.Low && price <= ob.High;
+                bool inProximity = dist <= range
+                                || price >= ob.Low - range && price <= ob.High + range;
+
+                if ((inZone || inProximity) && dist < nearestDist)
+                {
+                    nearestDist = dist;
+                    nearest     = ob;
+                }
+            }
+            return nearest;
+        }
+
+        // ── Private helpers ───────────────────────────────────────────────────────
+
+        private void UpdateMitigation(double high, double low)
+        {
+            for (int i = 0; i < _obs.Count; i++)
+            {
+                var ob = _obs[i];
+                if (ob.Mitigated) continue;
+
+                // Bullish OB voided when price low trades below zone low.
+                // Bearish OB voided when price high trades above zone high.
+                if ((ob.Type == OBType.Bullish && low  < ob.Low)  ||
+                    (ob.Type == OBType.Bearish && high > ob.High))
+                {
+                    ob.Mitigated = true;
+                    _obs[i]      = ob;
+                }
+            }
+        }
+
+        private void ScanForNewOrderBlock()
+        {
+            // history[0] = oldest bar, history[Length-1] = current bar (most recent)
             var history = _barHistory.ToArray();
             if (history.Length < ImpulseLookback + 1) return;
 
-            // Candidate OB is history[0], impulse is history[1..ImpulseLookback]
-            var candidate = history[0];
-            bool candidateBearish = candidate.Close < candidate.Open;
-            bool candidateBullish = candidate.Close > candidate.Open;
-
-            double impulseMove = 0;
-            for (int i = 1; i < history.Length; i++)
-                impulseMove += Math.Abs(history[i].Close - history[i - 1].Close);
-
             double threshold = _atr > 0 ? _atr * MinImpulseMultiple : TickSize * 8;
-            if (impulseMove < threshold) return;
 
-            double finalClose = history[^1].Close;
-            bool bullishImpulse = finalClose > candidate.High;
-            bool bearishImpulse = finalClose < candidate.Low;
+            // The impulse window is the last ImpulseLookback bars (excluding current).
+            // Candidate OB is the last opposite-colour candle just before the impulse.
+            int impulseStart = history.Length - 1 - ImpulseLookback;
+            int impulseEnd   = history.Length - 1;     // current bar
 
-            // Bearish OB: last bullish candle before bearish impulse
-            if (candidateBullish && bearishImpulse)
+            if (impulseStart < 0) return;
+
+            // Measure the impulse open-to-close direction and High-Low range.
+            double impulseOpen  = history[impulseStart + 1].Open;
+            double impulseClose = history[impulseEnd].Close;
+
+            double impulseHigh = double.MinValue;
+            double impulseLow  = double.MaxValue;
+            for (int i = impulseStart + 1; i <= impulseEnd; i++)
             {
-                AddZone(new ZoneLevel(
-                    ZoneType.OrderBlock,
-                    high:     candidate.High,
-                    low:      candidate.Open,   // body low of bullish candle
-                    bornBar:  candidate.Index,
-                    bornTime: DateTime.UtcNow));
+                if (history[i].High > impulseHigh) impulseHigh = history[i].High;
+                if (history[i].Low  < impulseLow)  impulseLow  = history[i].Low;
             }
-            // Bullish OB: last bearish candle before bullish impulse
-            else if (candidateBearish && bullishImpulse)
+
+            double impulseRange = impulseHigh - impulseLow;
+            if (impulseRange < threshold) return;
+
+            bool bullishImpulse = impulseClose > impulseOpen;
+            bool bearishImpulse = impulseClose < impulseOpen;
+            if (!bullishImpulse && !bearishImpulse) return;
+
+            // Walk back from impulseStart to find the last opposite-colour candidate.
+            for (int i = impulseStart; i >= 0; i--)
             {
-                AddZone(new ZoneLevel(
-                    ZoneType.OrderBlock,
-                    high:     candidate.Open,   // body high of bearish candle
-                    low:      candidate.Low,
-                    bornBar:  candidate.Index,
-                    bornTime: DateTime.UtcNow));
+                var    c          = history[i];
+                bool   isBullish  = c.Close > c.Open;
+                bool   isBearish  = c.Close < c.Open;
+
+                if (bullishImpulse && isBearish)
+                {
+                    // Last bearish candle before bullish impulse → Bullish OB
+                    if (!IsTracked(c.Index))
+                    {
+                        _obs.Add(new OrderBlock
+                        {
+                            High      = c.Open,    // body high of bearish candle
+                            Low       = c.Low,
+                            Type      = OBType.Bullish,
+                            Mitigated = false,
+                            BarIndex  = c.Index,
+                        });
+                    }
+                    break;
+                }
+
+                if (bearishImpulse && isBullish)
+                {
+                    // Last bullish candle before bearish impulse → Bearish OB
+                    if (!IsTracked(c.Index))
+                    {
+                        _obs.Add(new OrderBlock
+                        {
+                            High      = c.High,
+                            Low       = c.Open,    // body low of bullish candle
+                            Type      = OBType.Bearish,
+                            Mitigated = false,
+                            BarIndex  = c.Index,
+                        });
+                    }
+                    break;
+                }
             }
         }
 
-        private void CheckCurrentBarInZone(double close)
+        private bool IsTracked(int barIndex)
+        {
+            foreach (var ob in _obs)
+                if (ob.BarIndex == barIndex) return true;
+            return false;
+        }
+
+        private void UpdateLegacyFlag(double close)
         {
             InActiveOrderBlock = false;
-            CurrentZone        = null;
-
-            foreach (var zone in _activeZones.Where(z => z.IsActive))
+            foreach (var ob in _obs)
             {
-                if (zone.Contains(close))
+                if (!ob.Mitigated && close >= ob.Low && close <= ob.High)
                 {
-                    zone.RegisterTouch();
                     InActiveOrderBlock = true;
-                    CurrentZone        = zone;
-                    break; // report the first matching zone; caller can iterate ActiveZones
+                    break;
                 }
             }
         }
 
-        private void InvalidateViolatedZones(double close)
+        private void Prune()
         {
-            foreach (var zone in _activeZones)
-            {
-                // A close through the full zone body voids it
-                if (zone.IsActive && !zone.Contains(close))
-                {
-                    bool closedAbove = close > zone.High;
-                    bool closedBelow = close < zone.Low;
-                    // Only invalidate bearish OB if price closes above, bullish OB if below
-                    if (closedAbove || closedBelow) zone.Invalidate();
-                }
-            }
-        }
-
-        private void AddZone(ZoneLevel zone)
-        {
-            // Deduplicate: skip if an active zone overlaps meaningfully
-            bool overlapping = _activeZones.Any(z => z.IsActive &&
-                z.High >= zone.Low && z.Low <= zone.High);
-            if (!overlapping) _activeZones.Add(zone);
-        }
-
-        private void PruneExcessZones()
-        {
-            _activeZones.RemoveAll(z => !z.IsActive);
-            while (_activeZones.Count > MaxActiveZones)
-                _activeZones.RemoveAt(0); // drop oldest
+            // Remove mitigated entries once we exceed the cap.
+            _obs.RemoveAll(ob => ob.Mitigated);
+            while (_obs.Count > MaxActiveZones)
+                _obs.RemoveAt(0);
         }
     }
 }
