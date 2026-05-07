@@ -1,0 +1,61 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build outputs
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+
+# NinjaTrader compiled output
+*.ninjascript
+*.dll
+*.pdb
+*.cache
+
+# NinjaTrader workspace / local config
+*.ntws
+*.ntworkspace
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+!**/packages/repositories.config
+*.nuget.props
+*.nuget.targets
+
+# Resharper
+_ReSharper*/
+*.DotSettings.user
+
+# Rider
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Test results
+TestResults/
+*.trx
+*.coveragexml
+
+# User-specific NinjaTrader data (never commit live account data)
+NinjaTrader 8/db/
+NinjaTrader 8/log/
+NinjaTrader 8/workspaces/
+NinjaTrader 8/templates/
