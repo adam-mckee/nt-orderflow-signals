@@ -1,0 +1,7 @@
+**/.git
+**/.gitignore
+**/bin
+**/obj
+Indicators/
+README.md
+*.md

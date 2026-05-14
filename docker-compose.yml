@@ -1,0 +1,28 @@
+services:
+  orderflow-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Override any appsettings.json value with env vars.
+      # Key format: Section__SubSection__Property=value
+      # Credentials — use .env file or Docker secrets in production.
+      - OrderFlow__Tradovate__Username=${TRADOVATE_USERNAME}
+      - OrderFlow__Tradovate__Password=${TRADOVATE_PASSWORD}
+      - OrderFlow__Tradovate__Sec=${TRADOVATE_SEC}
+      - OrderFlow__Tradovate__DeviceId=${TRADOVATE_DEVICE_ID:-00000000-0000-0000-0000-000000000001}
+      - OrderFlow__Tradovate__Symbol=${SYMBOL:-MNQZ4}
+      - OrderFlow__Tradovate__UseDemoEnvironment=${USE_DEMO:-true}
+      - OrderFlow__Alerts__NtfyUrl=${NTFY_URL:-}
+      - OrderFlow__Alerts__NtfyToken=${NTFY_TOKEN:-}
+      # Tune signal parameters without rebuilding the image
+      - OrderFlow__Signal__DivergenceLookback=${DIV_LOOKBACK:-5}
+      - OrderFlow__Signal__ObProximityTicks=${OB_PROX_TICKS:-10}
+      - OrderFlow__Signal__SignalCooldownBars=${COOLDOWN_BARS:-3}
+      - TZ=America/New_York
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
