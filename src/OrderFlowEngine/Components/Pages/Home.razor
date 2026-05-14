@@ -1,0 +1,197 @@
+@page "/"
+@inject DashboardState State
+@inject IOptions<AppSettings> Opts
+@implements IDisposable
+
+<PageTitle>Dashboard – OrderFlow Signals</PageTitle>
+
+<h1>Dashboard</h1>
+
+@{
+    var trading = Opts.Value.Trading;
+}
+
+<!-- Gate Status -->
+<div class="gates">
+    <div class="gate @GateClass(State.AtLVN, false)">
+        <div class="gate-label">LVN</div>
+        <div class="gate-value">@(State.AtLVN ? "ACTIVE" : "—")</div>
+    </div>
+    <div class="gate @GateClass(State.Div3m != "None", State.Div3m == "Bearish")">
+        <div class="gate-label">Delta 3m</div>
+        <div class="gate-value">@State.Div3m</div>
+    </div>
+    <div class="gate @GateClass(State.HasOB, State.HasOB && State.OBType == "Bearish")">
+        <div class="gate-label">Order Block</div>
+        <div class="gate-value">@(State.HasOB ? State.OBType : "—")</div>
+    </div>
+    <div class="gate @GateClass(State.Div1m != "None", State.Div1m == "Bearish")">
+        <div class="gate-label">Delta 1m</div>
+        <div class="gate-value">@State.Div1m</div>
+    </div>
+</div>
+
+<!-- Open Position -->
+@if (State.OpenTrade is { } pos)
+{
+    <div class="card">
+        <h2>Open Position @(trading.Enabled ? "" : "(paper)")</h2>
+        <div class="position-grid">
+            <div class="pos-item">
+                <div class="label">Direction × Qty</div>
+                <div class="value @(pos.Direction == "Long" ? "long" : "short")">
+                    @pos.Direction × @pos.Contracts
+                </div>
+            </div>
+            <div class="pos-item">
+                <div class="label">Entry</div>
+                <div class="value">@pos.EntryPrice.ToString("F2")</div>
+            </div>
+            <div class="pos-item">
+                <div class="label">Risk</div>
+                <div class="value">$@pos.RiskDollars.ToString("F0")</div>
+            </div>
+            <div class="pos-item">
+                <div class="label">Stop</div>
+                <div class="value negative">@pos.StopPrice.ToString("F2")</div>
+            </div>
+            <div class="pos-item">
+                <div class="label">Target</div>
+                <div class="value positive">@pos.TargetPrice.ToString("F2")</div>
+            </div>
+            <div class="pos-item">
+                <div class="label">Signal</div>
+                <div class="value">@pos.Signal</div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Daily P&L -->
+@{
+    var today  = State.PnLHistory
+                      .Where(t => t.CloseTime?.Date == DateTime.Today)
+                      .ToList();
+    int  total    = today.Count;
+    int  wins     = today.Count(t => t.PnL > 0);
+    double totPnl = today.Sum(t => t.PnL ?? 0);
+    double wr     = total > 0 ? (double)wins / total : 0;
+}
+
+<div class="card">
+    <h2>Today's Performance</h2>
+    <div class="pnl-row">
+        <div class="pnl-stat">
+            <div class="label">P&amp;L</div>
+            <div class="value @PnlClass(totPnl)">@FormatPnl(totPnl)</div>
+        </div>
+        <div class="pnl-stat">
+            <div class="label">Trades</div>
+            <div class="value neutral">@total</div>
+        </div>
+        <div class="pnl-stat">
+            <div class="label">Win Rate</div>
+            <div class="value @(wr >= 0.5 ? "positive" : (total > 0 ? "negative" : "neutral"))">
+                @wr.ToString("P0")
+            </div>
+        </div>
+        <div class="pnl-stat">
+            <div class="label">Wins / Losses</div>
+            <div class="value neutral">@wins / @(total - wins)</div>
+        </div>
+    </div>
+</div>
+
+<!-- Signal Feed -->
+@if (State.RecentSignals.Count > 0)
+{
+    <div class="card">
+        <h2>Recent Signals</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time (UTC)</th>
+                    <th>Direction</th>
+                    <th>Price</th>
+                    <th>Qty</th>
+                    <th>Stop</th>
+                    <th>Target</th>
+                    <th>Risk</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in State.RecentSignals)
+                {
+                    <tr>
+                        <td>@s.Time.ToString("MM/dd HH:mm")</td>
+                        <td class="@(s.Direction == "Long" ? "long" : "short")">@s.Direction</td>
+                        <td>@s.Price.ToString("F2")</td>
+                        <td>@s.Contracts</td>
+                        <td>@s.StopPrice.ToString("F2")</td>
+                        <td>@s.TargetPrice.ToString("F2")</td>
+                        <td>$@s.RiskDollars.ToString("F0")</td>
+                        <td>@s.Reason</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<!-- Closed Trades -->
+@if (State.PnLHistory.Count > 0)
+{
+    <div class="card">
+        <h2>Closed Trades</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Open</th>
+                    <th>Dir</th>
+                    <th>Entry</th>
+                    <th>Exit</th>
+                    <th>Qty</th>
+                    <th>Reason</th>
+                    <th>P&amp;L</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in State.PnLHistory)
+                {
+                    <tr>
+                        <td>@t.OpenTime.ToString("MM/dd HH:mm")</td>
+                        <td class="@(t.Direction == "Long" ? "long" : "short")">@t.Direction</td>
+                        <td>@t.EntryPrice.ToString("F2")</td>
+                        <td>@t.ExitPrice?.ToString("F2")</td>
+                        <td>@t.Contracts</td>
+                        <td>@t.ExitReason</td>
+                        <td class="@PnlClass(t.PnL ?? 0)">@FormatPnl(t.PnL ?? 0)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+<div class="ts">Last gate update: @State.LastGateUpdate.ToString("HH:mm:ss") UTC</div>
+
+@code {
+    protected override void OnInitialized()
+        => State.OnStateChanged += Refresh;
+
+    private void Refresh()
+        => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+        => State.OnStateChanged -= Refresh;
+
+    private static string GateClass(bool active, bool bearish)
+        => active ? (bearish ? "bearish" : "on") : "off";
+
+    private static string PnlClass(double pnl)
+        => pnl > 0 ? "positive" : pnl < 0 ? "negative" : "neutral";
+
+    private static string FormatPnl(double pnl)
+        => pnl >= 0 ? $"+${pnl:F2}" : $"-${Math.Abs(pnl):F2}";
+}
