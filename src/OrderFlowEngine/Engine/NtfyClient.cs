@@ -22,11 +22,8 @@ public sealed class NtfyClient
         _log = log;
     }
 
-    /// <summary>
-    /// Sends a signal alert to ntfy. Returns immediately; the HTTP call runs
-    /// on the thread-pool and failures are swallowed.
-    /// </summary>
-    public void Send(string symbol, string direction, double price, string reason)
+    public void Send(string symbol, string direction, double price, string reason,
+                     int contracts, double stopPrice, double targetPrice)
     {
         string url = _cfg.NtfyUrl;
         if (string.IsNullOrWhiteSpace(url)) return;
@@ -35,8 +32,10 @@ public sealed class NtfyClient
         string timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
         string json = string.Format(
             "{{\"symbol\":\"{0}\",\"direction\":\"{1}\",\"price\":{2}," +
+            "\"contracts\":{5},\"stopPrice\":{6},\"targetPrice\":{7}," +
             "\"timestamp\":\"{3}\",\"triggerReason\":\"{4}\"}}",
-            Esc(symbol), direction, price, timestamp, Esc(reason));
+            Esc(symbol), direction, price, timestamp, Esc(reason),
+            contracts, stopPrice, targetPrice);
 
         _ = Task.Run(async () =>
         {

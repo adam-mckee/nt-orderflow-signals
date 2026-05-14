@@ -1,0 +1,135 @@
+@page "/settings"
+@inject IOptions<AppSettings> Opts
+
+<PageTitle>Settings – OrderFlow Signals</PageTitle>
+
+<h1>Settings</h1>
+
+<p style="color: var(--muted); margin-bottom: 1.5rem; font-size: 0.85rem;">
+    Edit <code>appsettings.json</code> (or set environment variables prefixed
+    <code>OrderFlow__</code>) and restart the container to apply changes.
+</p>
+
+@{
+    var cfg = Opts.Value;
+}
+
+<div class="settings-grid">
+
+    <div class="card">
+        <h2>Trading</h2>
+        <div class="setting-item">
+            <span class="setting-key">Enabled</span>
+            <span class="setting-val @(cfg.Trading.Enabled ? "enabled" : "disabled")">
+                @(cfg.Trading.Enabled ? "YES — LIVE" : "NO (paper)")
+            </span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Risk Per Trade</span>
+            <span class="setting-val">@((cfg.Trading.RiskPercent * 100).ToString("F1"))%</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Max Contracts</span>
+            <span class="setting-val">@cfg.Trading.MaxContracts</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Stop (ATR ×)</span>
+            <span class="setting-val">@cfg.Trading.StopAtrMultiple</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Reward Ratio</span>
+            <span class="setting-val">@cfg.Trading.RewardRatio : 1</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Tick Value</span>
+            <span class="setting-val">$@cfg.Trading.TickValue</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Signal Detection</h2>
+        <div class="setting-item">
+            <span class="setting-key">Tick Size</span>
+            <span class="setting-val">@cfg.Signal.TickSize</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Primary Bar</span>
+            <span class="setting-val">@cfg.Signal.PrimaryBarMinutes min</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Confirm Bar</span>
+            <span class="setting-val">@cfg.Signal.ConfirmBarMinutes min</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Value Area</span>
+            <span class="setting-val">@((cfg.Signal.ValueAreaPercent * 100).ToString("F0"))%</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">LVN Threshold</span>
+            <span class="setting-val">@((cfg.Signal.LvnThresholdPercent * 100).ToString("F0"))%</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Rolling Bars</span>
+            <span class="setting-val">@cfg.Signal.RollingProfileBars</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Divergence Lookback</span>
+            <span class="setting-val">@cfg.Signal.DivergenceLookback bars</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Impulse ATR ×</span>
+            <span class="setting-val">@cfg.Signal.ImpulseAtrMultiple</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Impulse Bars</span>
+            <span class="setting-val">@cfg.Signal.ImpulseBars</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">OB Proximity</span>
+            <span class="setting-val">@cfg.Signal.ObProximityTicks ticks</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Signal Cooldown</span>
+            <span class="setting-val">@cfg.Signal.SignalCooldownBars bars</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Tradovate</h2>
+        <div class="setting-item">
+            <span class="setting-key">Environment</span>
+            <span class="setting-val @(cfg.Tradovate.UseDemoEnvironment ? "" : "disabled")">
+                @(cfg.Tradovate.UseDemoEnvironment ? "Demo" : "LIVE")
+            </span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Symbol</span>
+            <span class="setting-val">@cfg.Tradovate.Symbol</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Username</span>
+            <span class="setting-val">@(string.IsNullOrEmpty(cfg.Tradovate.Username) ? "—" : cfg.Tradovate.Username)</span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">App ID</span>
+            <span class="setting-val">@cfg.Tradovate.AppId</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Alerts (ntfy)</h2>
+        <div class="setting-item">
+            <span class="setting-key">Topic URL</span>
+            <span class="setting-val">
+                @(string.IsNullOrEmpty(cfg.Alerts.NtfyUrl) ? "—" : cfg.Alerts.NtfyUrl)
+            </span>
+        </div>
+        <div class="setting-item">
+            <span class="setting-key">Token</span>
+            <span class="setting-val">
+                @(string.IsNullOrEmpty(cfg.Alerts.NtfyToken) ? "—" : "••••••••")
+            </span>
+        </div>
+    </div>
+
+</div>

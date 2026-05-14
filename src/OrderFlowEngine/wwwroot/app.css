@@ -1,0 +1,229 @@
+/* Dark trading terminal theme */
+:root {
+    --bg:        #0f1117;
+    --surface:   #1a1d2e;
+    --border:    #2a2d3e;
+    --text:      #e2e8f0;
+    --muted:     #64748b;
+    --green:     #10b981;
+    --red:       #ef4444;
+    --yellow:    #f59e0b;
+    --blue:      #3b82f6;
+    --sidebar-w: 200px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background:  var(--bg);
+    color:       var(--text);
+    font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+    font-size:   14px;
+    line-height: 1.5;
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────────── */
+
+.layout {
+    display:    flex;
+    min-height: 100vh;
+}
+
+.main-content {
+    flex:       1;
+    padding:    2rem;
+    overflow-y: auto;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────────── */
+
+.sidebar {
+    width:          var(--sidebar-w);
+    background:     var(--surface);
+    border-right:   1px solid var(--border);
+    padding:        1.5rem 1rem;
+    display:        flex;
+    flex-direction: column;
+    gap:            0.5rem;
+    flex-shrink:    0;
+}
+
+.brand {
+    font-size:     1.1rem;
+    font-weight:   700;
+    color:         var(--green);
+    margin-bottom: 1rem;
+    letter-spacing: 0.05em;
+}
+
+.sidebar a {
+    color:          var(--muted);
+    text-decoration: none;
+    padding:        0.5rem 0.75rem;
+    border-radius:  6px;
+    transition:     background 0.15s, color 0.15s;
+    display:        block;
+}
+
+.sidebar a:hover,
+.sidebar a.active {
+    background: var(--border);
+    color:      var(--text);
+}
+
+/* ── Typography ──────────────────────────────────────────────────────────────── */
+
+h1 { font-size: 1.4rem; margin-bottom: 1.5rem; font-weight: 600; }
+h2 {
+    font-size:      0.75rem;
+    margin-bottom:  0.75rem;
+    font-weight:    600;
+    color:          var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+code {
+    background:    var(--border);
+    padding:       0.1em 0.4em;
+    border-radius: 3px;
+    font-size:     0.9em;
+}
+
+/* ── Cards ───────────────────────────────────────────────────────────────────── */
+
+.card {
+    background:    var(--surface);
+    border:        1px solid var(--border);
+    border-radius: 8px;
+    padding:       1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+/* ── Gate grid ───────────────────────────────────────────────────────────────── */
+
+.gates {
+    display:               grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap:                   1rem;
+    margin-bottom:         1.25rem;
+}
+
+.gate {
+    background:    var(--surface);
+    border:        1px solid var(--border);
+    border-radius: 8px;
+    padding:       1rem;
+    text-align:    center;
+    transition:    border-color 0.2s;
+}
+
+.gate-label {
+    font-size:      0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color:          var(--muted);
+    margin-bottom:  0.4rem;
+}
+
+.gate-value { font-size: 1rem; font-weight: 600; }
+
+.gate.on      { border-color: var(--green); }
+.gate.off     { border-color: var(--border); }
+.gate.bearish { border-color: var(--red); }
+
+.gate.on      .gate-value { color: var(--green); }
+.gate.off     .gate-value { color: var(--muted); }
+.gate.bearish .gate-value { color: var(--red); }
+
+/* ── P&L summary ─────────────────────────────────────────────────────────────── */
+
+.pnl-row {
+    display: flex;
+    gap:     2.5rem;
+    flex-wrap: wrap;
+}
+
+.pnl-stat .label {
+    font-size:      0.7rem;
+    text-transform: uppercase;
+    color:          var(--muted);
+    letter-spacing: 0.06em;
+}
+
+.pnl-stat .value { font-size: 1.5rem; font-weight: 700; }
+
+/* ── Open position ───────────────────────────────────────────────────────────── */
+
+.position-grid {
+    display:               grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap:                   0.75rem;
+}
+
+.pos-item .label { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); }
+.pos-item .value { font-size: 1.05rem; font-weight: 600; }
+
+/* ── Tables ──────────────────────────────────────────────────────────────────── */
+
+table            { width: 100%; border-collapse: collapse; }
+th {
+    text-align:     left;
+    font-size:      0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color:          var(--muted);
+    padding:        0.5rem 0.75rem;
+    border-bottom:  1px solid var(--border);
+}
+td {
+    padding:       0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size:     0.85rem;
+}
+tr:last-child td { border-bottom: none; }
+
+/* ── Settings ────────────────────────────────────────────────────────────────── */
+
+.settings-grid {
+    display:               grid;
+    grid-template-columns: 1fr 1fr;
+    gap:                   1.25rem;
+}
+
+.setting-item {
+    display:         flex;
+    justify-content: space-between;
+    align-items:     center;
+    padding:         0.45rem 0;
+    border-bottom:   1px solid var(--border);
+}
+.setting-item:last-child { border-bottom: none; }
+.setting-key { color: var(--muted); }
+.setting-val { font-weight: 600; }
+
+/* ── Utility colours ─────────────────────────────────────────────────────────── */
+
+.positive { color: var(--green); }
+.negative { color: var(--red);   }
+.neutral  { color: var(--text);  }
+.long     { color: var(--green); }
+.short    { color: var(--red);   }
+.enabled  { color: var(--green); }
+.disabled { color: var(--red);   }
+
+.ts { font-size: 0.7rem; color: var(--muted); margin-top: 1rem; }
+
+/* ── Responsive ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .gates         { grid-template-columns: repeat(2, 1fr); }
+    .settings-grid { grid-template-columns: 1fr; }
+    .pnl-row       { gap: 1rem; }
+    .position-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+    .sidebar { display: none; }
+    .gates   { grid-template-columns: repeat(2, 1fr); }
+}
