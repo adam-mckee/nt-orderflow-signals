@@ -1,68 +1,88 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using OrderFlowEngine.BarBuilding;
+using Microsoft.Extensions.Options;
 using OrderFlowEngine.Config;
 using OrderFlowEngine.Engine;
 using OrderFlowEngine.Tradovate;
 
 // ── Host setup ────────────────────────────────────────────────────────────────
-var host = Host.CreateDefaultBuilder(args)
-    .ConfigureAppConfiguration((_, config) =>
-    {
-        // appsettings.json is loaded by CreateDefaultBuilder automatically.
-        // Override with environment variables at runtime (e.g. Docker secrets).
-        // Key format: OrderFlow__Tradovate__Password=...
-    })
-    .ConfigureServices((ctx, services) =>
-    {
-        services.Configure<AppSettings>(ctx.Configuration.GetSection("OrderFlow"));
+var builder = WebApplication.CreateBuilder(args);
 
-        services.AddSingleton<NtfyClient>();
-        services.AddSingleton<TradovateClient>();
-        services.AddSingleton<SignalEngine>();
+// Config: appsettings.json loaded automatically; override via environment vars.
+// Key format: OrderFlow__Tradovate__Password=...
+builder.Services.Configure<AppSettings>(builder.Configuration.GetSection("OrderFlow"));
 
-        services.AddHostedService<EngineHostedService>();
-    })
-    .ConfigureLogging(logging =>
-    {
-        logging.ClearProviders();
-        logging.AddConsole(opts => opts.FormatterName = "simple");
-    })
-    .Build();
+// Blazor Server
+builder.Services.AddRazorComponents()
+                .AddInteractiveServerComponents();
 
-await host.RunAsync();
+// Engine singletons
+builder.Services.AddSingleton<NtfyClient>();
+builder.Services.AddSingleton<TradovateClient>();
+builder.Services.AddSingleton<TradovateOrderClient>();
+builder.Services.AddSingleton<PositionSizer>();
+builder.Services.AddSingleton<TradeManager>();
+builder.Services.AddSingleton<DashboardState>();
+builder.Services.AddSingleton<SignalEngine>();
+
+builder.Services.AddHostedService<EngineHostedService>();
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole(opts => opts.FormatterName = "simple");
+
+var app = builder.Build();
+
+app.UseStaticFiles();
+app.UseAntiforgery();
+app.MapRazorComponents<OrderFlowEngine.Components.App>()
+   .AddInteractiveServerRenderMode();
+
+await app.RunAsync();
 
 // ── Hosted service ────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Bootstraps the SignalEngine and the TradovateClient, then blocks until
-/// the application is stopped (Ctrl-C or SIGTERM).
+/// Bootstraps the SignalEngine and TradovateClient, then blocks until stopped.
+/// If Trading.Enabled is true, also initialises the REST order client.
 /// </summary>
 internal sealed class EngineHostedService : IHostedService
 {
-    private readonly TradovateClient _tradovate;
-    private readonly SignalEngine    _engine;
+    private readonly TradovateClient      _tradovate;
+    private readonly TradovateOrderClient _orderClient;
+    private readonly SignalEngine         _engine;
+    private readonly IOptions<AppSettings> _opts;
     private readonly ILogger<EngineHostedService> _log;
     private CancellationTokenSource? _cts;
     private Task? _runTask;
 
     public EngineHostedService(
         TradovateClient tradovate,
+        TradovateOrderClient orderClient,
         SignalEngine engine,
+        IOptions<AppSettings> opts,
         ILogger<EngineHostedService> log)
     {
-        _tradovate = tradovate;
-        _engine    = engine;
-        _log       = log;
+        _tradovate   = tradovate;
+        _orderClient = orderClient;
+        _engine      = engine;
+        _opts        = opts;
+        _log         = log;
     }
 
-    public Task StartAsync(CancellationToken ct)
+    public async Task StartAsync(CancellationToken ct)
     {
-        _cts     = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        if (_opts.Value.Trading.Enabled)
+        {
+            _log.LogInformation("Trading enabled — initialising Tradovate order client…");
+            await _orderClient.InitializeAsync(_cts.Token);
+        }
+        else
+        {
+            _log.LogInformation("Trading disabled — running in paper-signal mode.");
+        }
+
         _runTask = _tradovate.RunAsync(_cts.Token);
-        _log.LogInformation("OrderFlowEngine started. Waiting for market data…");
-        return Task.CompletedTask;
+        _log.LogInformation("OrderFlowEngine started. Dashboard: http://localhost:5000");
     }
 
     public async Task StopAsync(CancellationToken ct)
